@@ -1,0 +1,41 @@
+name: eBay Topps Pricer Collector
+
+on:
+  schedule:
+    # Every 6 hours. Frequent enough that delistings (our sold-proxy signal)
+    # get caught reasonably close to when they happen, without hammering
+    # eBay's API.
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: Ebay_Topps_Pricer
+        run: pip install -r requirements.txt
+
+      - name: Run collector
+        working-directory: Ebay_Topps_Pricer
+        env:
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+        run: python scripts/run_collector.py
+
+      - name: Commit updated comps database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Ebay_Topps_Pricer/data/pricer.sqlite3
+          git diff --cached --quiet || git commit -m "Update eBay Topps comps database [skip ci]"
+          git push

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Topps eBay Mispricing Finder</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Topps eBay Mispricing Finder</h1>
+    <p class="subtitle">
+      Active Topps baseball card listings compared against a self-built comps
+      history (median of recently delisted fixed-price listings for the same
+      player/year/set/parallel/grade).
+    </p>
+  </header>
+
+  <nav class="tabs">
+    <a href="/?view=underpriced" class="{{ 'active' if view == 'underpriced' else '' }}">
+      Most Underpriced (bargains)
+    </a>
+    <a href="/?view=overpriced" class="{{ 'active' if view == 'overpriced' else '' }}">
+      Most Overpriced
+    </a>
+  </nav>
+
+  {% if listings %}
+  <table>
+    <thead>
+      <tr>
+        <th>Card</th>
+        <th>Price</th>
+        <th>Comp Median</th>
+        <th># Comps</th>
+        <th>Deviation</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in listings %}
+      <tr>
+        <td class="title-cell">
+          <div class="title">{{ item.title }}</div>
+          <div class="meta">
+            {{ item.year or "" }} {{ item.card_set or "" }}
+            {% if item.parallel %}&middot; {{ item.parallel }}{% endif %}
+            {% if item.grade_company %}&middot; {{ item.grade_company }} {{ item.grade_value }}{% endif %}
+          </div>
+        </td>
+        <td>${{ "%.2f"|format(item.price) }}</td>
+        <td>${{ "%.2f"|format(item.comp_median) }}</td>
+        <td>{{ item.comp_count }}</td>
+        <td class="{{ 'positive' if item.deviation_pct > 0 else 'negative' }}">
+          {{ "%.1f"|format(item.deviation_pct) }}%
+        </td>
+        <td><a href="{{ item.web_url }}" target="_blank" rel="noopener noreferrer">View on eBay</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">
+    No scored listings yet. The comps database needs at least a few collector
+    runs (each run snapshots active listings; comps build up as listings sell
+    or get delisted between runs) before it can score anything. See the
+    README for how to schedule the collector.
+  </p>
+  {% endif %}
+</body>
+</html>
