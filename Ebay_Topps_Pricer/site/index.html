@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Topps eBay Mispricing Finder</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Topps eBay Mispricing Finder</h1>
+    <p class="subtitle" id="subtitle">
+      Active Topps baseball card listings compared against a self-built comps
+      history (median of recently delisted fixed-price listings for the same
+      player/year/set/parallel/grade).
+      <span class="psa-badge">PSA Vault</span> listings are ranked first.
+    </p>
+    <p class="generated-at" id="generated-at"></p>
+  </header>
+
+  <nav class="tabs">
+    <a href="#underpriced" data-view="underpriced" id="tab-underpriced">Most Underpriced (bargains)</a>
+    <a href="#overpriced" data-view="overpriced" id="tab-overpriced">Most Overpriced</a>
+  </nav>
+
+  <div id="content">
+    <p class="empty">Loading&hellip;</p>
+  </div>
+
+  <script>
+    const state = { data: null };
+
+    function fmtMoney(n) {
+      return "$" + Number(n).toFixed(2);
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s ?? "";
+      return div.innerHTML;
+    }
+
+    function renderTable(listings) {
+      if (!listings || listings.length === 0) {
+        return `<p class="empty">
+          No scored listings yet. The comps database needs at least a few collector
+          runs (each run snapshots active listings; comps build up as listings sell
+          or get delisted between runs) before it can score anything. See the
+          README for how to schedule the collector.
+        </p>`;
+      }
+
+      const rows = listings.map((item) => {
+        const metaParts = [
+          [item.year, item.card_set].filter(Boolean).join(" "),
+          item.parallel,
+          item.grade_company ? `${item.grade_company} ${item.grade_value ?? ""}`.trim() : null,
+        ].filter(Boolean);
+
+        const devClass = item.deviation_pct > 0 ? "positive" : "negative";
+        const psaBadge = item.is_psa_vault ? '<span class="psa-badge">PSA Vault</span>' : "";
+
+        return `
+          <tr>
+            <td class="title-cell" data-label="Card">
+              <div class="title">${escapeHtml(item.title)} ${psaBadge}</div>
+              <div class="meta">${escapeHtml(metaParts.join(" · "))}</div>
+            </td>
+            <td data-label="Price">${fmtMoney(item.price)}</td>
+            <td data-label="Comp Median">${fmtMoney(item.comp_median)}</td>
+            <td data-label="# Comps">${item.comp_count}</td>
+            <td data-label="Deviation" class="${devClass}">${item.deviation_pct.toFixed(1)}%</td>
+            <td data-label=""><a href="${item.web_url}" target="_blank" rel="noopener noreferrer">View on eBay</a></td>
+          </tr>`;
+      }).join("");
+
+      return `
+        <table>
+          <thead>
+            <tr>
+              <th>Card</th>
+              <th>Price</th>
+              <th>Comp Median</th>
+              <th># Comps</th>
+              <th>Deviation</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    function renderView(view) {
+      document.getElementById("tab-underpriced").classList.toggle("active", view === "underpriced");
+      document.getElementById("tab-overpriced").classList.toggle("active", view === "overpriced");
+
+      const content = document.getElementById("content");
+      if (!state.data) {
+        content.innerHTML = `<p class="empty">
+          Could not load data.json. This file is regenerated on a schedule by the
+          GitHub Actions collector workflow -- if this is a fresh deployment, it
+          may not have run yet.
+        </p>`;
+        return;
+      }
+      const listings = view === "overpriced" ? state.data.overpriced : state.data.underpriced;
+      content.innerHTML = renderTable(listings);
+    }
+
+    function currentView() {
+      const hash = window.location.hash.replace("#", "");
+      return hash === "overpriced" ? "overpriced" : "underpriced";
+    }
+
+    document.querySelectorAll(".tabs a").forEach((tab) => {
+      tab.addEventListener("click", (e) => {
+        e.preventDefault();
+        window.location.hash = tab.dataset.view;
+        renderView(tab.dataset.view);
+      });
+    });
+
+    window.addEventListener("hashchange", () => renderView(currentView()));
+
+    fetch("data.json", { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        state.data = data;
+        const genLabel = document.getElementById("generated-at");
+        if (data.generated_at) {
+          const dt = new Date(data.generated_at);
+          genLabel.textContent = `Last updated: ${dt.toLocaleString()} · comps window: ${data.comp_lookback_days} days · min comps: ${data.min_comps}`;
+        }
+        renderView(currentView());
+      })
+      .catch((err) => {
+        console.error("Failed to load data.json", err);
+        renderView(currentView());
+      });
+  </script>
+</body>
+</html>

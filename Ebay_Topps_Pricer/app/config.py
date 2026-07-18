@@ -25,7 +25,14 @@ SEARCH_QUERIES = [
 ]
 
 # Minimum number of sold-proxy comps required before we trust a comp median.
-MIN_COMPS_FOR_SCORE = 3
+# Cards with fewer than this many recent comps are filtered out entirely.
+MIN_COMPS_FOR_SCORE = 2
 
 # Only consider sold-proxy events within this many days as valid comps.
-COMP_LOOKBACK_DAYS = 120
+COMP_LOOKBACK_DAYS = 90
+
+# eBay seller usernames that represent PSA's official "PSA Vault" storefront
+# (ebay.com/str/psa). Listings sold by PSA directly from the vault carry a
+# stronger authentication/custody signal than a random seller's raw or
+# self-graded card, so these get preferential ranking in results.
+PSA_VAULT_SELLER_USERNAMES = frozenset({"psa"})

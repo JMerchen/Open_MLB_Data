@@ -19,6 +19,11 @@ from app.ebay_client import EbayClient, EbayItem
 logger = logging.getLogger(__name__)
 
 
+def _is_psa_vault(item: EbayItem) -> bool:
+    username = (item.seller_username or "").strip().lower()
+    return username in config.PSA_VAULT_SELLER_USERNAMES
+
+
 def _to_parsed_listing(item: EbayItem) -> db.ParsedListing:
     parsed = parse_title(item.title)
     return db.ParsedListing(
@@ -38,6 +43,7 @@ def _to_parsed_listing(item: EbayItem) -> db.ParsedListing:
         card_number=parsed.card_number,
         grade_company=parsed.grade_company,
         grade_value=parsed.grade_value,
+        is_psa_vault=_is_psa_vault(item),
     )
 
 

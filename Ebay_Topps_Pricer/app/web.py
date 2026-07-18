@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import comps, db
+from app import comps, config, db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,6 +46,8 @@ def index(
             "listings": listings,
             "view": view,
             "limit": limit,
+            "comp_lookback_days": config.COMP_LOOKBACK_DAYS,
+            "min_comps": config.MIN_COMPS_FOR_SCORE,
         },
     )
 
@@ -60,22 +62,4 @@ def api_mispriced(
         if view == "underpriced"
         else comps.most_overpriced(limit=limit)
     )
-    return [
-        {
-            "item_id": listing.item_id,
-            "title": listing.title,
-            "price": listing.price,
-            "comp_median": listing.comp_median,
-            "comp_count": listing.comp_count,
-            "deviation_pct": round(listing.deviation_pct, 1),
-            "web_url": listing.web_url,
-            "player": listing.player,
-            "year": listing.year,
-            "card_set": listing.card_set,
-            "parallel": listing.parallel,
-            "card_number": listing.card_number,
-            "grade_company": listing.grade_company,
-            "grade_value": listing.grade_value,
-        }
-        for listing in listings
-    ]
+    return [comps.to_dict(listing) for listing in listings]

@@ -10,9 +10,17 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+# Required once, one-time, in the repo's Settings -> Pages -> Build and
+# deployment -> Source: "GitHub Actions" -- see Ebay_Topps_Pricer/README.md.
+environment:
+  name: github-pages
+  url: ${{ steps.deployment.outputs.page_url }}
 
 jobs:
-  collect:
+  collect-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +40,10 @@ jobs:
           EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
         run: python scripts/run_collector.py
 
+      - name: Export static site data
+        working-directory: Ebay_Topps_Pricer
+        run: python scripts/export_static.py
+
       - name: Commit updated comps database
         run: |
           git config user.name "github-actions[bot]"
@@ -39,3 +51,12 @@ jobs:
           git add Ebay_Topps_Pricer/data/pricer.sqlite3
           git diff --cached --quiet || git commit -m "Update eBay Topps comps database [skip ci]"
           git push
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: Ebay_Topps_Pricer/site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -4,6 +4,28 @@ A small web app that watches active Topps baseball card listings on eBay,
 builds a comps history, and surfaces the listings priced furthest away from
 their comps -- both bargains (underpriced) and overpriced items.
 
+There are two ways to run the UI:
+- **FastAPI app** (`app/web.py`) -- a live server that queries the database
+  on every request. Good for local use.
+- **Static site** (`site/`) -- plain HTML/JS that fetches a pre-generated
+  `site/data.json` snapshot. This is what's deployed to **GitHub Pages**,
+  since Pages can only serve static files, not run a Python server.
+
+## Guardrails
+
+- **Comp window**: only sold-proxy events from the last `COMP_LOOKBACK_DAYS`
+  (default 90 / ~3 months) count as comps.
+- **Minimum comps**: a card needs at least `MIN_COMPS_FOR_SCORE` (default 2)
+  comps in that window before it's scored at all -- otherwise it's dropped.
+- **PSA Vault preference**: listings sold directly by PSA's official eBay
+  storefront (`ebay.com/str/psa`) are flagged `is_psa_vault` and ranked
+  ahead of all other listings in both the underpriced and overpriced views,
+  since a vaulted card carries a stronger authentication/custody guarantee
+  than a typical seller listing. This is a ranking preference, not a filter
+  -- non-vaulted listings still show up, just after any PSA Vault ones.
+
+All three are configured in `app/config.py`.
+
 ## Why this isn't a simple "compare to sold prices" tool
 
 eBay's Finding API (`findCompletedItems`), which used to expose sold/completed
@@ -32,17 +54,19 @@ listings to keep the sold-proxy signal reasonably clean.
 ```
 Ebay_Topps_Pricer/
   app/
-    config.py       # env vars, search queries, comp thresholds
-    ebay_client.py  # OAuth + Browse API wrapper
-    card_parser.py  # title -> player/year/set/parallel/grade + signature
-    db.py           # SQLite schema + queries (listings, sold_proxy_events)
-    collector.py    # one collection pass: snapshot + sold-proxy detection
-    comps.py        # comp median + mispricing scoring
-    web.py          # FastAPI app (the actual webpage)
-  templates/index.html
-  static/style.css
-  scripts/run_collector.py   # CLI entrypoint for the collector, run on a schedule
-  data/pricer.sqlite3        # the comps database (created on first run)
+    config.py         # env vars, search queries, comp/PSA-vault thresholds
+    ebay_client.py     # OAuth + Browse API wrapper
+    card_parser.py     # title -> player/year/set/parallel/grade + signature
+    db.py               # SQLite schema + queries (listings, sold_proxy_events)
+    collector.py        # one collection pass: snapshot + sold-proxy detection
+    comps.py             # comp median + mispricing scoring + PSA Vault ranking
+    web.py                 # FastAPI app (live server UI)
+    export_static.py        # dumps scored listings to site/data.json
+  templates/index.html, static/style.css   # FastAPI UI assets
+  site/index.html, site/style.css, site/data.json   # static GitHub Pages UI
+  scripts/run_collector.py    # CLI entrypoint for the collector, run on a schedule
+  scripts/export_static.py    # CLI entrypoint to regenerate site/data.json
+  data/pricer.sqlite3         # the comps database (created on first run)
 ```
 
 ## Setup
@@ -74,13 +98,21 @@ Ebay_Topps_Pricer/
    repeatedly over time (delistings between runs are what build the
    sold-proxy history) -- see "Keeping data fresh" below.
 
-5. **Start the web app**:
-   ```bash
-   uvicorn app.web:app --reload
-   ```
-   Visit http://127.0.0.1:8000 to see the ranked list. There's also a
-   JSON endpoint at `/api/mispriced?view=underpriced&limit=50`
-   (`view` is `underpriced` or `overpriced`).
+5. **Start the web app** (either one reads the same database):
+   - Live server:
+     ```bash
+     uvicorn app.web:app --reload
+     ```
+     Visit http://127.0.0.1:8000. There's also a JSON endpoint at
+     `/api/mispriced?view=underpriced&limit=50` (`view` is `underpriced` or
+     `overpriced`).
+   - Static site (what GitHub Pages serves):
+     ```bash
+     python scripts/export_static.py   # writes site/data.json
+     python -m http.server 8000 --directory site
+     ```
+     Visit http://127.0.0.1:8000. Re-run `export_static.py` any time the
+     database changes to refresh `data.json`.
 
 ## Keeping data fresh
 
@@ -89,18 +121,25 @@ options:
 
 - **GitHub Actions (recommended for "set and forget")**: this repo includes
   `.github/workflows/ebay-topps-collector.yml`, which runs the collector
-  every 6 hours and commits the updated `data/pricer.sqlite3` back to the
-  repo. To enable it:
+  every 6 hours, regenerates `site/data.json`, commits the updated
+  `data/pricer.sqlite3` back to the repo, and deploys `site/` to GitHub
+  Pages. To enable it:
   1. Add `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` as repository secrets
      (Settings -> Secrets and variables -> Actions).
-  2. The workflow only fires on a schedule once it lives on the repo's
+  2. One-time: in Settings -> Pages -> "Build and deployment", set
+     **Source** to **GitHub Actions** (not "Deploy from a branch"). This
+     lets the workflow publish directly without needing a `gh-pages` branch.
+  3. The workflow only fires on a schedule once it lives on the repo's
      default branch (GitHub doesn't run `schedule` triggers on other
      branches), so it starts working after this is merged.
-  3. `git pull` locally before running the web app to pick up the latest
-     collected data, since the workflow commits directly to the branch.
+  4. Once deployed, the static site is live at
+     `https://<your-github-username>.github.io/<repo-name>/`.
+  5. `git pull` locally before running the FastAPI app to pick up the
+     latest collected data, since the workflow commits directly to the branch.
 
 - **Local/manual**: run `python scripts/run_collector.py` yourself on a
-  cron job (e.g. every few hours) or by hand periodically.
+  cron job (e.g. every few hours) or by hand periodically. Run
+  `python scripts/export_static.py` afterward if you're using the static site.
 
 ## Known limitations
 
@@ -113,3 +152,7 @@ options:
   player name) but will occasionally misgroup or under-match unusual titles.
 - **Search coverage**: `config.SEARCH_QUERIES` covers common Topps flagship
   sets. Extend that list to widen coverage of other sets/inserts.
+- **PSA Vault detection**: identified by matching the listing's eBay seller
+  username against `config.PSA_VAULT_SELLER_USERNAMES` (currently just
+  `"psa"`, PSA's official store at `ebay.com/str/psa`). If PSA ever lists
+  vaulted cards through a different account, add its username to that set.
