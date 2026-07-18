@@ -6,6 +6,11 @@ fixed-price Topps listings are currently active. When a previously-seen
 item stops showing up in an active snapshot, we record it as a sold-proxy
 event at its last known price -- a reasonable stand-in for a completed sale
 on Buy-It-Now listings.
+
+Listings are also flagged as `is_psa_vault` when sold directly by PSA's
+official eBay storefront (ebay.com/str/psa) -- these get preferential
+ranking in app/comps.py since PSA-vaulted cards carry a stronger
+authentication/custody signal than a typical seller listing.
 """
 
 from __future__ import annotations
@@ -36,6 +41,7 @@ CREATE TABLE IF NOT EXISTS listings (
     card_number TEXT,
     grade_company TEXT,
     grade_value TEXT,
+    is_psa_vault INTEGER NOT NULL DEFAULT 0,
     first_seen_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1
@@ -74,6 +80,7 @@ class ParsedListing:
     card_number: str | None
     grade_company: str | None
     grade_value: str | None
+    is_psa_vault: bool
 
 
 def now_iso() -> str:
@@ -108,12 +115,13 @@ def upsert_active_listings(listings: list[ParsedListing]) -> None:
                     item_id, title, price, currency, condition, web_url,
                     seller_username, image_url, signature, player, year,
                     card_set, parallel, card_number, grade_company, grade_value,
-                    first_seen_at, last_seen_at, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    is_psa_vault, first_seen_at, last_seen_at, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(item_id) DO UPDATE SET
                     title=excluded.title,
                     price=excluded.price,
                     condition=excluded.condition,
+                    is_psa_vault=excluded.is_psa_vault,
                     last_seen_at=excluded.last_seen_at,
                     is_active=1
                 """,
@@ -122,7 +130,8 @@ def upsert_active_listings(listings: list[ParsedListing]) -> None:
                     item.condition, item.web_url, item.seller_username,
                     item.image_url, item.signature, item.player, item.year,
                     item.card_set, item.parallel, item.card_number,
-                    item.grade_company, item.grade_value, ts, ts,
+                    item.grade_company, item.grade_value,
+                    int(item.is_psa_vault), ts, ts,
                 ),
             )
 

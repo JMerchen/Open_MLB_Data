@@ -12,7 +12,9 @@
     <p class="subtitle">
       Active Topps baseball card listings compared against a self-built comps
       history (median of recently delisted fixed-price listings for the same
-      player/year/set/parallel/grade).
+      player/year/set/parallel/grade), using comps from the last
+      {{ comp_lookback_days }} days with at least {{ min_comps }} comps.
+      <span class="psa-badge">PSA Vault</span> listings are ranked first.
     </p>
   </header>
 
@@ -41,7 +43,10 @@
       {% for item in listings %}
       <tr>
         <td class="title-cell">
-          <div class="title">{{ item.title }}</div>
+          <div class="title">
+            {{ item.title }}
+            {% if item.is_psa_vault %}<span class="psa-badge">PSA Vault</span>{% endif %}
+          </div>
           <div class="meta">
             {{ item.year or "" }} {{ item.card_set or "" }}
             {% if item.parallel %}&middot; {{ item.parallel }}{% endif %}
