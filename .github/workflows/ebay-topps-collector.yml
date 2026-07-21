@@ -13,15 +13,14 @@ permissions:
   pages: write
   id-token: write
 
-# Required once, one-time, in the repo's Settings -> Pages -> Build and
-# deployment -> Source: "GitHub Actions" -- see Ebay_Topps_Pricer/README.md.
-environment:
-  name: github-pages
-  url: ${{ steps.deployment.outputs.page_url }}
-
 jobs:
   collect-and-deploy:
     runs-on: ubuntu-latest
+    # Required once, one-time, in the repo's Settings -> Pages -> Build and
+    # deployment -> Source: "GitHub Actions" -- see Ebay_Topps_Pricer/README.md.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
