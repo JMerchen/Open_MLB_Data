@@ -121,7 +121,7 @@ options:
 
 - **GitHub Actions (recommended for "set and forget")**: this repo includes
   `.github/workflows/ebay-topps-collector.yml`, which runs the collector
-  every 6 hours, regenerates `site/data.json`, commits the updated
+  every hour, regenerates `site/data.json`, commits the updated
   `data/pricer.sqlite3` back to the repo, and deploys `site/` to GitHub
   Pages. To enable it:
   1. Add `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` as repository secrets
