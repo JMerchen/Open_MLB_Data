@@ -56,7 +56,31 @@ KNOWN_PARALLELS = [
 STOPWORDS = {
     "the", "a", "an", "and", "with", "of", "in", "on", "for", "new",
     "card", "cards", "rc", "rookie", "mlb", "baseball", "hof",
+    # Sealed-product / lot / variation-listing words. Without these, the
+    # name extractor below can mistake e.g. "Hobby Box" for a player name,
+    # since both words are capitalized and otherwise look name-shaped.
+    "hobby", "box", "boxes", "blaster", "blasters", "case", "cases",
+    "pack", "packs", "break", "breaks", "lot", "lots", "set", "sets",
+    "singles", "single", "choose", "pick", "picks", "team", "teams",
+    "complete", "master", "wax", "hanger", "jumbo", "mega", "fat",
+    "cello", "rack", "value", "sealed", "factory", "your", "you",
+    "select", "bulk", "random",
 }
+
+# Phrases that reliably mark a listing as sealed product, a multi-card lot,
+# or a "you pick which card" variation listing rather than one specific
+# single card. These get excluded outright regardless of what the rest of
+# the parser extracts -- see is_single_card_listing().
+NON_SINGLE_CARD_PHRASES = [
+    "hobby box", "blaster box", "blaster", "jumbo box", "mega box",
+    "hanger box", "hanger pack", "fat pack", "cello pack", "rack pack",
+    "value pack", "wax box", "wax pack box", "retail box", "sealed box",
+    "factory sealed", "case break", "box break", "team break",
+    "random team", "pick your team", "you pick", "u pick", "u-pick",
+    "upick", "pick a card", "pick your card", "choose your card",
+    "select your card", "your choice", "card lot", "lot of", "bulk lot",
+    "complete set", "team set", "master set", "set break",
+]
 
 
 @dataclass
@@ -162,3 +186,20 @@ def parse_title(title: str) -> ParsedCard:
         grade_value=grade_value,
         signature=signature,
     )
+
+
+def is_single_card_listing(title: str, parsed: ParsedCard) -> bool:
+    """True only for listings that represent exactly one specific card at
+    one specific price.
+
+    Rejects sealed product, set breaks, and "pick which card" variation
+    listings (see NON_SINGLE_CARD_PHRASES) as well as anything the parser
+    couldn't pin to a specific player and card number -- those fall back to
+    a generic "unknown-player"/"no-number" signature that would otherwise
+    collide with every other unparseable listing (boxes, lots, etc.),
+    producing meaningless comps.
+    """
+    lowered = title.lower()
+    if any(phrase in lowered for phrase in NON_SINGLE_CARD_PHRASES):
+        return False
+    return parsed.player is not None and parsed.card_number is not None
