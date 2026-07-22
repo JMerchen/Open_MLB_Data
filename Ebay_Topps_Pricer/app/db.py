@@ -19,9 +19,10 @@ import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterator
+from typing import Callable, Iterator
 
 from app import config
+from app.card_parser import ParsedCard, parse_title
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -174,3 +175,32 @@ def comp_prices_for_signature(signature: str, since_iso: str) -> list[float]:
             (signature, since_iso),
         ).fetchall()
         return [r["price"] for r in rows]
+
+
+def purge_ineligible_listings(
+    is_eligible_fn: Callable[[str, ParsedCard], bool],
+) -> int:
+    """Deletes any stored listing (active or not) -- and its sold-proxy
+    events -- that fails is_eligible_fn(title, parsed). Re-parses every
+    stored title against the current rules, so this also retroactively
+    cleans out rows collected before a parser/eligibility change (e.g.
+    sealed product or "pick your card" listings that used to slip through).
+    Safe to call every run: a no-op once the database is already clean.
+    """
+    with connect() as conn:
+        rows = conn.execute("SELECT item_id, title FROM listings").fetchall()
+        bad_ids = [
+            row["item_id"] for row in rows
+            if not is_eligible_fn(row["title"], parse_title(row["title"]))
+        ]
+        if not bad_ids:
+            return 0
+        placeholders = ",".join("?" * len(bad_ids))
+        conn.execute(
+            f"DELETE FROM listings WHERE item_id IN ({placeholders})", bad_ids
+        )
+        conn.execute(
+            f"DELETE FROM sold_proxy_events WHERE item_id IN ({placeholders})",
+            bad_ids,
+        )
+        return len(bad_ids)

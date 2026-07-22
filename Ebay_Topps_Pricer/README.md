@@ -150,6 +150,16 @@ options:
   fixed format. `card_parser.py` extracts what it reliably can (year,
   grading company/grade, card number, known set/parallel names, a best-guess
   player name) but will occasionally misgroup or under-match unusual titles.
+- **Only single-card listings are scored**: sealed product (boxes, blasters,
+  packs), set breaks, multi-card lots, and "pick your card" variation
+  listings are excluded via `card_parser.is_single_card_listing()` -- a
+  listing needs both a specific player name and a card number, or it's
+  dropped. Without this, unparseable listings of every kind (a $125 hobby
+  box, a $0.99-and-up "you pick" listing, an actual $50 single card) all
+  fall back to the same generic signature and get compared to each other,
+  producing nonsense "mispricing" numbers. The collector also purges any
+  previously-stored rows that fail this check on every run, so a parser
+  change like this retroactively cleans up already-collected data.
 - **Search coverage**: `config.SEARCH_QUERIES` covers common Topps flagship
   sets. Extend that list to widen coverage of other sets/inserts.
 - **PSA Vault detection**: identified by matching the listing's eBay seller

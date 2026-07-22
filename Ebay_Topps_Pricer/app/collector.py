@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from app import config, db
-from app.card_parser import parse_title
+from app.card_parser import ParsedCard, is_single_card_listing, parse_title
 from app.ebay_client import EbayClient, EbayItem
 
 logger = logging.getLogger(__name__)
@@ -24,8 +24,7 @@ def _is_psa_vault(item: EbayItem) -> bool:
     return username in config.PSA_VAULT_SELLER_USERNAMES
 
 
-def _to_parsed_listing(item: EbayItem) -> db.ParsedListing:
-    parsed = parse_title(item.title)
+def _to_parsed_listing(item: EbayItem, parsed: ParsedCard) -> db.ParsedListing:
     return db.ParsedListing(
         item_id=item.item_id,
         title=item.title,
@@ -50,24 +49,42 @@ def _to_parsed_listing(item: EbayItem) -> db.ParsedListing:
 def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -> dict:
     """Runs a full collection pass. Returns a small summary dict for logging."""
     db.init_db()
+
+    purged = db.purge_ineligible_listings(is_single_card_listing)
+    if purged:
+        logger.info(
+            "Purged %d previously-stored listings/comps that aren't single "
+            "specific cards (sealed product, lots, pick-your-card, etc.)",
+            purged,
+        )
+
     client = client or EbayClient()
 
     seen_item_ids: set[str] = set()
     total_upserted = 0
+    total_skipped = 0
 
     for query in config.SEARCH_QUERIES:
         logger.info("Searching eBay for %r", query)
         batch: list[db.ParsedListing] = []
+        skipped = 0
         for item in client.search_all(query, max_items=max_items_per_query):
             if "Topps" not in item.title:
                 # Browse API's text search is fuzzy; drop obvious non-Topps noise.
                 continue
+            parsed = parse_title(item.title)
+            if not is_single_card_listing(item.title, parsed):
+                # Sealed product, set breaks, "pick your card" listings, etc.
+                # -- not a single card at a single price, so not comparable.
+                skipped += 1
+                continue
             seen_item_ids.add(item.item_id)
-            batch.append(_to_parsed_listing(item))
+            batch.append(_to_parsed_listing(item, parsed))
         if batch:
             db.upsert_active_listings(batch)
             total_upserted += len(batch)
-        logger.info("  -> %d Topps listings", len(batch))
+        total_skipped += skipped
+        logger.info("  -> %d single-card Topps listings (%d skipped)", len(batch), skipped)
 
     sold_proxy_count = db.mark_missing_as_sold_proxy(seen_item_ids)
 
@@ -75,7 +92,9 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
         "queries_run": len(config.SEARCH_QUERIES),
         "active_listings_seen": len(seen_item_ids),
         "listings_upserted": total_upserted,
+        "listings_skipped_non_single_card": total_skipped,
         "sold_proxy_events_recorded": sold_proxy_count,
+        "purged_ineligible_rows": purged,
     }
     logger.info("Collector run complete: %s", summary)
     return summary
