@@ -163,8 +163,13 @@ options:
   producing nonsense "mispricing" numbers. The collector also purges any
   previously-stored rows that fail this check on every run, so a parser
   change like this retroactively cleans up already-collected data.
-- **Search coverage**: `config.SEARCH_QUERIES` covers common Topps flagship
-  sets. Extend that list to widen coverage of other sets/inserts.
+- **Search coverage / comps pool size**: `config.SEARCH_QUERIES` covers 12
+  Topps product lines (~121 Browse API calls/run, ~2,904/day hourly -- 58%
+  of eBay's 5,000/day limit). Comps only form when the *exact* same card
+  (player/year/set/parallel/number/grade) is seen more than once, so a
+  narrower query list starves the comps pool -- most active listings will
+  simply never get enough comps to score. Extend `SEARCH_QUERIES` to widen
+  coverage further, but watch the daily call budget.
 - **PSA Vault detection**: identified by matching the listing's eBay seller
   username against `config.PSA_VAULT_SELLER_USERNAMES` (currently just
   `"psa"`, PSA's official store at `ebay.com/str/psa`). If PSA ever lists
