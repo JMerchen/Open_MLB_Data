@@ -1,11 +1,15 @@
 """Turns raw active listings + sold-proxy history into a ranked list of
-"most mispriced" cards.
+underpriced Topps cards -- listings priced well below their comps, i.e.
+likely bargains.
 
 For each active listing we look up sold-proxy events sharing the same
 card signature (player/year/set/parallel/number/grade) within the recent
 lookback window, and compare the listing's price to the comp median.
-A positive deviation_pct means the listing is priced *below* its comps
-(potential bargain); negative means it's priced above comps.
+deviation_pct is positive when the listing is priced *below* its comps.
+
+We only surface underpriced listings -- an overpriced listing isn't
+actionable for a bargain-hunting tool like this one, since you'd just buy
+the fairly-priced copy instead of the inflated one.
 
 Guardrails applied here (see app/config.py for the actual values):
   - only comps within the last COMP_LOOKBACK_DAYS count
@@ -51,7 +55,14 @@ def _lookback_cutoff_iso() -> str:
     return cutoff.isoformat()
 
 
-def score_active_listings(min_comps: int = config.MIN_COMPS_FOR_SCORE) -> list[ScoredListing]:
+def most_underpriced(
+    limit: int = 50, min_comps: int = config.MIN_COMPS_FOR_SCORE
+) -> list[ScoredListing]:
+    """Listings priced well below their comps -- likely bargains.
+
+    PSA Vault listings are ranked ahead of non-vaulted ones; within each
+    group, the most underpriced listings come first.
+    """
     since_iso = _lookback_cutoff_iso()
     scored: list[ScoredListing] = []
 
@@ -68,6 +79,8 @@ def score_active_listings(min_comps: int = config.MIN_COMPS_FOR_SCORE) -> list[S
             continue
 
         deviation_pct = (comp_median - row["price"]) / comp_median * 100
+        if deviation_pct <= 0:
+            continue
 
         scored.append(
             ScoredListing(
@@ -89,30 +102,8 @@ def score_active_listings(min_comps: int = config.MIN_COMPS_FOR_SCORE) -> list[S
             )
         )
 
-    scored.sort(key=lambda s: s.deviation_pct, reverse=True)
-    return scored
-
-
-def most_underpriced(limit: int = 50) -> list[ScoredListing]:
-    """Listings priced well below their comps -- likely bargains.
-
-    PSA Vault listings are ranked ahead of non-vaulted ones; within each
-    group, the most underpriced listings come first.
-    """
-    underpriced = [s for s in score_active_listings() if s.deviation_pct > 0]
-    underpriced.sort(key=lambda s: (not s.is_psa_vault, -s.deviation_pct))
-    return underpriced[:limit]
-
-
-def most_overpriced(limit: int = 50) -> list[ScoredListing]:
-    """Listings priced well above their comps -- likely overpriced/avoid.
-
-    PSA Vault listings are ranked ahead of non-vaulted ones; within each
-    group, the most overpriced listings come first.
-    """
-    overpriced = [s for s in score_active_listings() if s.deviation_pct < 0]
-    overpriced.sort(key=lambda s: (not s.is_psa_vault, s.deviation_pct))
-    return overpriced[:limit]
+    scored.sort(key=lambda s: (not s.is_psa_vault, -s.deviation_pct))
+    return scored[:limit]
 
 
 def to_dict(listing: ScoredListing) -> dict:

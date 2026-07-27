@@ -6,7 +6,6 @@
   --border: #e0e0e0;
   --accent: #0a5ad6;
   --positive: #0a7d32;
-  --negative: #b3261e;
   --row-hover: #f5f7fa;
   --psa-bg: #e8f0fe;
   --psa-fg: #0a3d8f;
@@ -20,7 +19,6 @@
     --border: #2b2e33;
     --accent: #6ea8ff;
     --positive: #4fd47a;
-    --negative: #ff6b64;
     --row-hover: #1c1f24;
     --psa-bg: #1c2b47;
     --psa-fg: #9dc0ff;
@@ -47,27 +45,6 @@ header h1 {
   max-width: 60ch;
   margin: 0 0 1.5rem;
   font-size: 0.9rem;
-}
-
-.tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.tabs a {
-  padding: 0.6rem 1rem;
-  text-decoration: none;
-  color: var(--muted);
-  font-size: 0.9rem;
-  border-bottom: 2px solid transparent;
-}
-
-.tabs a.active {
-  color: var(--fg);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
 }
 
 table {
@@ -106,7 +83,6 @@ tbody tr:hover {
 }
 
 .positive { color: var(--positive); font-weight: 600; }
-.negative { color: var(--negative); font-weight: 600; }
 
 .psa-badge {
   display: inline-block;

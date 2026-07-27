@@ -1,8 +1,8 @@
-# Topps eBay Mispricing Finder
+# Topps eBay Bargain Finder
 
 A small web app that watches active Topps baseball card listings on eBay,
-builds a comps history, and surfaces the listings priced furthest away from
-their comps -- both bargains (underpriced) and overpriced items.
+builds a comps history, and surfaces listings priced well below their
+comps -- likely bargains.
 
 There are two ways to run the UI:
 - **FastAPI app** (`app/web.py`) -- a live server that queries the database
@@ -23,10 +23,10 @@ There are two ways to run the UI:
   a real opportunity.
 - **PSA Vault preference**: listings sold directly by PSA's official eBay
   storefront (`ebay.com/str/psa`) are flagged `is_psa_vault` and ranked
-  ahead of all other listings in both the underpriced and overpriced views,
-  since a vaulted card carries a stronger authentication/custody guarantee
-  than a typical seller listing. This is a ranking preference, not a filter
-  -- non-vaulted listings still show up, just after any PSA Vault ones.
+  ahead of all other listings, since a vaulted card carries a stronger
+  authentication/custody guarantee than a typical seller listing. This is
+  a ranking preference, not a filter -- non-vaulted listings still show up,
+  just after any PSA Vault ones.
 
 All of these are configured in `app/config.py`.
 
@@ -108,8 +108,7 @@ Ebay_Topps_Pricer/
      uvicorn app.web:app --reload
      ```
      Visit http://127.0.0.1:8000. There's also a JSON endpoint at
-     `/api/mispriced?view=underpriced&limit=50` (`view` is `underpriced` or
-     `overpriced`).
+     `/api/mispriced?limit=50`.
    - Static site (what GitHub Pages serves):
      ```bash
      python scripts/export_static.py   # writes site/data.json
