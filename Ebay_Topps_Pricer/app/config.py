@@ -17,11 +17,27 @@ BASEBALL_CARDS_CATEGORY_ID = "213"
 
 # Search queries used to pull Topps baseball card listings. Kept broad on
 # purpose -- card_parser.py does the real filtering/attribute extraction.
+#
+# Each query pages through up to 500 results (10 calls). At 12 queries that's
+# ~121 Browse API calls/run; hourly, that's ~2,904/day -- 58% of eBay's
+# 5,000/day default limit, leaving headroom. A narrow query list starves the
+# comps pool: the comp signature is exact (player/year/set/parallel/number/
+# grade), so a card needs to be seen more than once to have any comps at
+# all, and covering more of eBay's ~500-result-per-query cap across more
+# distinct Topps product lines is what grows that pool.
 SEARCH_QUERIES = [
     "Topps baseball card",
     "Topps Chrome baseball",
     "Topps Update baseball",
     "Topps Heritage baseball",
+    "Topps Series 1 baseball",
+    "Topps Series 2 baseball",
+    "Topps Finest baseball",
+    "Topps Stadium Club baseball",
+    "Topps Gypsy Queen baseball",
+    "Topps Archives baseball",
+    "Topps Allen Ginter baseball",
+    "Topps Big League baseball",
 ]
 
 # Minimum number of sold-proxy comps required before we trust a comp median.

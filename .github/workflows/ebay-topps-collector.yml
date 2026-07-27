@@ -2,9 +2,10 @@ name: eBay Topps Pricer Collector
 
 on:
   schedule:
-    # Every hour. ~984 Browse API calls/day (41/run), well under eBay's
-    # 5,000/day default limit, and catches delistings (our sold-proxy
-    # signal) much closer to when they actually happen.
+    # Every hour. ~2,904 Browse API calls/day (121/run across 12 search
+    # queries, see app/config.py), well under eBay's 5,000/day default
+    # limit, and catches delistings (our sold-proxy signal) much closer to
+    # when they actually happen.
     - cron: "0 * * * *"
   workflow_dispatch: {}
 
