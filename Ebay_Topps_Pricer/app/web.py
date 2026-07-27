@@ -1,4 +1,4 @@
-"""FastAPI app that serves the mispriced-Topps-cards page.
+"""FastAPI app that serves the underpriced-Topps-cards page.
 
 Read-only: it never calls eBay itself. All data comes from whatever the
 collector (app/collector.py, run on a schedule) has already written to
@@ -18,7 +18,7 @@ from app import comps, config, db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-app = FastAPI(title="Topps eBay Mispricing Finder")
+app = FastAPI(title="Topps eBay Bargain Finder")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
@@ -29,22 +29,13 @@ def _ensure_db() -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(
-    request: Request,
-    view: str = Query("underpriced", pattern="^(underpriced|overpriced)$"),
-    limit: int = Query(50, ge=1, le=200),
-):
-    listings = (
-        comps.most_underpriced(limit=limit)
-        if view == "underpriced"
-        else comps.most_overpriced(limit=limit)
-    )
+def index(request: Request, limit: int = Query(50, ge=1, le=200)):
+    listings = comps.most_underpriced(limit=limit)
     return templates.TemplateResponse(
         request,
         "index.html",
         {
             "listings": listings,
-            "view": view,
             "limit": limit,
             "comp_lookback_days": config.COMP_LOOKBACK_DAYS,
             "min_comps": config.MIN_COMPS_FOR_SCORE,
@@ -53,13 +44,5 @@ def index(
 
 
 @app.get("/api/mispriced")
-def api_mispriced(
-    view: str = Query("underpriced", pattern="^(underpriced|overpriced)$"),
-    limit: int = Query(50, ge=1, le=200),
-):
-    listings = (
-        comps.most_underpriced(limit=limit)
-        if view == "underpriced"
-        else comps.most_overpriced(limit=limit)
-    )
-    return [comps.to_dict(listing) for listing in listings]
+def api_mispriced(limit: int = Query(50, ge=1, le=200)):
+    return [comps.to_dict(listing) for listing in comps.most_underpriced(limit=limit)]

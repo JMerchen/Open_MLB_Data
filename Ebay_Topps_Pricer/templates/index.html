@@ -3,29 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Topps eBay Mispricing Finder</title>
+  <title>Topps eBay Bargain Finder</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <header>
-    <h1>Topps eBay Mispricing Finder</h1>
+    <h1>Topps eBay Bargain Finder</h1>
     <p class="subtitle">
-      Active Topps baseball card listings compared against a self-built comps
+      Active Topps baseball card listings priced below a self-built comps
       history (median of recently delisted fixed-price listings for the same
       player/year/set/parallel/grade), using comps from the last
       {{ comp_lookback_days }} days with at least {{ min_comps }} comps.
       <span class="psa-badge">PSA Vault</span> listings are ranked first.
     </p>
   </header>
-
-  <nav class="tabs">
-    <a href="/?view=underpriced" class="{{ 'active' if view == 'underpriced' else '' }}">
-      Most Underpriced (bargains)
-    </a>
-    <a href="/?view=overpriced" class="{{ 'active' if view == 'overpriced' else '' }}">
-      Most Overpriced
-    </a>
-  </nav>
 
   {% if listings %}
   <table>
@@ -56,9 +47,7 @@
         <td>${{ "%.2f"|format(item.price) }}</td>
         <td>${{ "%.2f"|format(item.comp_median) }}</td>
         <td>{{ item.comp_count }}</td>
-        <td class="{{ 'positive' if item.deviation_pct > 0 else 'negative' }}">
-          {{ "%.1f"|format(item.deviation_pct) }}%
-        </td>
+        <td class="positive">{{ "%.1f"|format(item.deviation_pct) }}%</td>
         <td><a href="{{ item.web_url }}" target="_blank" rel="noopener noreferrer">View on eBay</a></td>
       </tr>
       {% endfor %}

@@ -33,15 +33,12 @@ def export(output_path: Path = DATA_FILE) -> dict:
         "underpriced": [
             comps.to_dict(s) for s in comps.most_underpriced(limit=EXPORT_LIMIT)
         ],
-        "overpriced": [
-            comps.to_dict(s) for s in comps.most_overpriced(limit=EXPORT_LIMIT)
-        ],
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2))
     logger.info(
-        "Exported %d underpriced / %d overpriced listings to %s",
-        len(payload["underpriced"]), len(payload["overpriced"]), output_path,
+        "Exported %d underpriced listings to %s",
+        len(payload["underpriced"]), output_path,
     )
     return payload
 
