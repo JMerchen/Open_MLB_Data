@@ -11,6 +11,9 @@ Guardrails applied here (see app/config.py for the actual values):
   - only comps within the last COMP_LOOKBACK_DAYS count
   - a card needs at least MIN_COMPS_FOR_SCORE comps in that window to be
     scored at all
+  - listings priced below MIN_LISTING_PRICE are dropped entirely -- a $0.99
+    listing against a $1.59 comp median is a big deviation_pct but not a
+    real opportunity
   - PSA Vault listings (is_psa_vault) are ranked ahead of everything else,
     since they carry a stronger authentication/custody signal
 """
@@ -53,6 +56,9 @@ def score_active_listings(min_comps: int = config.MIN_COMPS_FOR_SCORE) -> list[S
     scored: list[ScoredListing] = []
 
     for row in db.active_listings():
+        if row["price"] < config.MIN_LISTING_PRICE:
+            continue
+
         comp_prices = db.comp_prices_for_signature(row["signature"], since_iso)
         if len(comp_prices) < min_comps:
             continue

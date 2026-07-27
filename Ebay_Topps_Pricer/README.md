@@ -17,6 +17,10 @@ There are two ways to run the UI:
   (default 90 / ~3 months) count as comps.
 - **Minimum comps**: a card needs at least `MIN_COMPS_FOR_SCORE` (default 2)
   comps in that window before it's scored at all -- otherwise it's dropped.
+- **Minimum listing price**: listings under `MIN_LISTING_PRICE` (default
+  $10) are dropped even if the deviation from comps looks big -- a $0.99
+  listing against a $1.59 comp median is "60% underpriced" on paper but not
+  a real opportunity.
 - **PSA Vault preference**: listings sold directly by PSA's official eBay
   storefront (`ebay.com/str/psa`) are flagged `is_psa_vault` and ranked
   ahead of all other listings in both the underpriced and overpriced views,
@@ -24,7 +28,7 @@ There are two ways to run the UI:
   than a typical seller listing. This is a ranking preference, not a filter
   -- non-vaulted listings still show up, just after any PSA Vault ones.
 
-All three are configured in `app/config.py`.
+All of these are configured in `app/config.py`.
 
 ## Why this isn't a simple "compare to sold prices" tool
 

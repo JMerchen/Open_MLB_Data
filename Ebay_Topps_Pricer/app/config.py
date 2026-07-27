@@ -31,6 +31,11 @@ MIN_COMPS_FOR_SCORE = 2
 # Only consider sold-proxy events within this many days as valid comps.
 COMP_LOOKBACK_DAYS = 90
 
+# Listings priced below this are excluded from results even if the
+# deviation from comps looks big. A $0.99 listing against a $1.59 comp
+# median is "60% underpriced" on paper but not worth acting on.
+MIN_LISTING_PRICE = 10.0
+
 # eBay seller usernames that represent PSA's official "PSA Vault" storefront
 # (ebay.com/str/psa). Listings sold by PSA directly from the vault carry a
 # stronger authentication/custody signal than a random seller's raw or
