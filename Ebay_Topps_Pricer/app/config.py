@@ -61,7 +61,7 @@ MIN_LISTING_PRICE = 10.0
 # percentage on a cheap card, or a big dollar amount that's a tiny
 # percentage on an expensive card, isn't enough on its own.
 MIN_DEVIATION_PCT = 15.0
-MIN_DEVIATION_DOLLARS = 5.0
+MIN_DEVIATION_DOLLARS = 30.0
 
 # eBay seller usernames that represent PSA's official "PSA Vault" storefront
 # (ebay.com/str/psa). Listings sold by PSA directly from the vault carry a

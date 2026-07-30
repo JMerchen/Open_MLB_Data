@@ -23,7 +23,7 @@ There are two ways to run the UI:
   a real opportunity.
 - **Minimum meaningful discount**: a listing must beat its comp median by
   at least `MIN_DEVIATION_PCT` (default 15%) **and** `MIN_DEVIATION_DOLLARS`
-  (default $5) -- both, not either. Comps come from a handful of noisy
+  (default $30) -- both, not either. Comps come from a handful of noisy
   delisting-proxy events, not real sold prices, so a small gap (e.g. $22.49
   against a $23.99 median) is normal variance, not a bargain.
 - **PSA Vault preference**: listings sold directly by PSA's official eBay
