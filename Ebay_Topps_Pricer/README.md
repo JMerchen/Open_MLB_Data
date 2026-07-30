@@ -158,6 +158,12 @@ options:
   fixed format. `card_parser.py` extracts what it reliably can (year,
   grading company/grade, card number, known set/parallel names, a best-guess
   player name) but will occasionally misgroup or under-match unusual titles.
+  Ungraded cards are bucketed as one "ungraded" group regardless of whether
+  the seller typed "RAW" in the title -- that distinction isn't meaningful.
+  Whenever the signature scheme changes, `db.recompute_signatures()` (run
+  automatically every collector run) re-derives every stored row's
+  signature from its title, so historical comps benefit from the fix too
+  instead of being stuck under the old scheme.
 - **Only single-card listings are scored**: sealed product (boxes, blasters,
   packs), set breaks, multi-card lots, and "pick your card" variation
   listings are excluded via `card_parser.is_single_card_listing()` -- a

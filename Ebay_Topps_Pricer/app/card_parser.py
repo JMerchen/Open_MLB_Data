@@ -166,13 +166,21 @@ def parse_title(title: str) -> ParsedCard:
     grade_company, grade_value = _extract_grade(title)
     player = _extract_player(title, year, card_set)
 
+    # A card is either professionally graded (company + numeric grade) or
+    # it isn't -- whether the seller bothered to type "RAW" in the title is
+    # not a meaningful distinction. Collapsing both into one "ungraded"
+    # bucket keeps that comps pool from being needlessly split in two.
+    grade_segment = (
+        f"{grade_company}-{grade_value}".lower() if grade_company else "ungraded"
+    )
+
     signature_parts = [
         (player or "unknown-player").lower(),
         year or "unknown-year",
         (card_set or "unknown-set").lower(),
         (parallel or "base").lower(),
         (card_number or "no-number").lower(),
-        f"{grade_company or 'raw'}-{grade_value or 'ungraded'}".lower(),
+        grade_segment,
     ]
     signature = "|".join(signature_parts)
 

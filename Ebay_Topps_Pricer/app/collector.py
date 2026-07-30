@@ -58,6 +58,14 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
             purged,
         )
 
+    resignatured = db.recompute_signatures()
+    if resignatured:
+        logger.info(
+            "Recomputed %d stored signatures to match the current parser "
+            "(e.g. a card_parser.py grouping change)",
+            resignatured,
+        )
+
     client = client or EbayClient()
 
     seen_item_ids: set[str] = set()
@@ -95,6 +103,7 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
         "listings_skipped_non_single_card": total_skipped,
         "sold_proxy_events_recorded": sold_proxy_count,
         "purged_ineligible_rows": purged,
+        "resignatured_rows": resignatured,
     }
     logger.info("Collector run complete: %s", summary)
     return summary

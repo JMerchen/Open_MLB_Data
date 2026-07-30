@@ -204,3 +204,47 @@ def purge_ineligible_listings(
             bad_ids,
         )
         return len(bad_ids)
+
+
+def recompute_signatures() -> int:
+    """Re-derives the signature column for every stored row (both tables)
+    from its title, using the current card_parser.parse_title() logic.
+
+    The signature is computed once at insert time and stored as-is, so a
+    change to the signature scheme (e.g. merging the "explicitly RAW" and
+    "grade not mentioned" buckets into one "ungraded" bucket) doesn't
+    retroactively apply to already-collected rows unless we do this. Safe
+    to call every run: a no-op once every row already matches.
+    """
+    with connect() as conn:
+        updated = 0
+
+        for row in conn.execute("SELECT item_id, title, signature FROM listings"):
+            new_signature = parse_title(row["title"]).signature
+            if new_signature != row["signature"]:
+                conn.execute(
+                    "UPDATE listings SET signature = ? WHERE item_id = ?",
+                    (new_signature, row["item_id"]),
+                )
+                updated += 1
+
+        # sold_proxy_events doesn't store its own title; look it up via the
+        # listings row for the same item_id (permanent -- listings rows are
+        # only ever deleted alongside their sold-proxy events, in lockstep,
+        # by purge_ineligible_listings, so this join should never orphan).
+        for row in conn.execute(
+            """SELECT spe.id, spe.signature, l.title
+               FROM sold_proxy_events spe
+               LEFT JOIN listings l ON l.item_id = spe.item_id"""
+        ):
+            if row["title"] is None:
+                continue
+            new_signature = parse_title(row["title"]).signature
+            if new_signature != row["signature"]:
+                conn.execute(
+                    "UPDATE sold_proxy_events SET signature = ? WHERE id = ?",
+                    (new_signature, row["id"]),
+                )
+                updated += 1
+
+        return updated
