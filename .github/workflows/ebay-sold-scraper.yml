@@ -1,0 +1,54 @@
+name: eBay Topps Sold-Listings Scraper
+
+# Separate from ebay-topps-collector.yml on purpose: scraping eBay's public
+# sold-listings search (not an API they publish for this) is inherently
+# more fragile than the Browse API collector -- against eBay's ToS, and
+# their markup can change without notice. If this breaks, it must not be
+# able to take down the core hourly collector/Pages-deploy pipeline.
+#
+# This workflow only runs the scraper and commits the database -- it does
+# NOT regenerate site/data.json or redeploy Pages. The next hourly
+# collector run (see ebay-topps-collector.yml) picks up any newly scraped
+# comps automatically within the hour.
+
+on:
+  schedule:
+    # Every 4 hours, offset 20 minutes from the hourly collector's :00
+    # slot so the two workflows' git commits realistically never overlap
+    # (the collector run finishes in under two minutes -- see its own
+    # comments for the API budget this stays under).
+    - cron: "20 */4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  scrape-sold-listings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: Ebay_Topps_Pricer
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        working-directory: Ebay_Topps_Pricer
+        run: python scripts/run_scraper.py
+
+      - name: Commit updated comps database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Ebay_Topps_Pricer/data/pricer.sqlite3
+          if git diff --cached --quiet; then
+            echo "No DB changes to commit"
+          else
+            git commit -m "Update eBay Topps comps database (scraper) [skip ci]"
+            git push || echo "::warning::Push rejected, likely raced with the hourly collector -- this run's scraped data will be picked up fresh next cycle"
+          fi

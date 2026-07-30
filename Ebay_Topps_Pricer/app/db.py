@@ -189,6 +189,42 @@ def mark_missing_as_sold_proxy(seen_item_ids: set[str]) -> int:
         return len(missing)
 
 
+@dataclass
+class ScrapedSoldRecord:
+    item_id: str
+    signature: str
+    price: float
+
+
+def insert_scraped_sold_events(events: list[ScrapedSoldRecord]) -> int:
+    """Inserts real scraped sold prices (source='ebay_scraped') -- the
+    highest-confidence comp tier, see comps.py. Deduplicates on item_id:
+    eBay's sold-listings search shows a rolling window, so the same real
+    sale can appear across multiple scrape runs; only the first sighting
+    is kept, at its actual sold time. Returns the number newly inserted.
+    """
+    ts = now_iso()
+    with connect() as conn:
+        existing = {
+            row[0]
+            for row in conn.execute(
+                "SELECT item_id FROM sold_proxy_events WHERE source = 'ebay_scraped'"
+            )
+        }
+        inserted = 0
+        for event in events:
+            if event.item_id in existing:
+                continue
+            conn.execute(
+                """INSERT INTO sold_proxy_events (item_id, signature, price, sold_at_approx, source)
+                   VALUES (?, ?, ?, ?, 'ebay_scraped')""",
+                (event.item_id, event.signature, event.price, ts),
+            )
+            existing.add(event.item_id)
+            inserted += 1
+        return inserted
+
+
 def active_listings() -> list[sqlite3.Row]:
     with connect() as conn:
         return conn.execute(
