@@ -32,6 +32,16 @@ There are two ways to run the UI:
   authentication/custody guarantee than a typical seller listing. This is
   a ranking preference, not a filter -- non-vaulted listings still show up,
   just after any PSA Vault ones.
+- **Comp source confidence tiers**: not every comp is equally trustworthy.
+  Highest to lowest: a real scraped sold price (`ebay_scraped`) > a clean
+  delisting-proxy price (`delisting_proxy`) > a delisting-proxy price from
+  a listing that had Best Offer enabled (`delisting_proxy_best_offer`),
+  since its last *listed* price isn't necessarily what it actually sold
+  for -- an accepted offer could be lower. `comps._select_comps()` always
+  prefers the highest-confidence tier available and only widens to a
+  lower tier if that's not enough to reach `MIN_COMPS_FOR_SCORE` -- never
+  dilutes a good sample with a worse one when the good sample already
+  suffices. Each result shows which tier its comps came from.
 
 All of these are configured in `app/config.py`.
 

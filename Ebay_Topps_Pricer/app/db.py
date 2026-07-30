@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS listings (
     grade_company TEXT,
     grade_value TEXT,
     is_psa_vault INTEGER NOT NULL DEFAULT 0,
+    has_best_offer INTEGER NOT NULL DEFAULT 0,
     first_seen_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1
@@ -53,7 +54,8 @@ CREATE TABLE IF NOT EXISTS sold_proxy_events (
     item_id TEXT NOT NULL,
     signature TEXT NOT NULL,
     price REAL NOT NULL,
-    sold_at_approx TEXT NOT NULL
+    sold_at_approx TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'delisting_proxy'
 );
 
 CREATE INDEX IF NOT EXISTS idx_listings_signature ON listings(signature);
@@ -82,6 +84,7 @@ class ParsedListing:
     grade_company: str | None
     grade_value: str | None
     is_psa_vault: bool
+    has_best_offer: bool
 
 
 def now_iso() -> str:
@@ -100,9 +103,24 @@ def connect() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    """Adds `column` to `table` if it doesn't already exist. SCHEMA's
+    CREATE TABLE IF NOT EXISTS only applies to brand-new databases -- an
+    existing production database needs an explicit ALTER TABLE to pick up
+    a column added after it was first created."""
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "listings", "has_best_offer", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(
+            conn, "sold_proxy_events", "source",
+            "TEXT NOT NULL DEFAULT 'delisting_proxy'",
+        )
 
 
 def upsert_active_listings(listings: list[ParsedListing]) -> None:
@@ -116,13 +134,14 @@ def upsert_active_listings(listings: list[ParsedListing]) -> None:
                     item_id, title, price, currency, condition, web_url,
                     seller_username, image_url, signature, player, year,
                     card_set, parallel, card_number, grade_company, grade_value,
-                    is_psa_vault, first_seen_at, last_seen_at, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    is_psa_vault, has_best_offer, first_seen_at, last_seen_at, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(item_id) DO UPDATE SET
                     title=excluded.title,
                     price=excluded.price,
                     condition=excluded.condition,
                     is_psa_vault=excluded.is_psa_vault,
+                    has_best_offer=excluded.has_best_offer,
                     last_seen_at=excluded.last_seen_at,
                     is_active=1
                 """,
@@ -132,7 +151,7 @@ def upsert_active_listings(listings: list[ParsedListing]) -> None:
                     item.image_url, item.signature, item.player, item.year,
                     item.card_set, item.parallel, item.card_number,
                     item.grade_company, item.grade_value,
-                    int(item.is_psa_vault), ts, ts,
+                    int(item.is_psa_vault), int(item.has_best_offer), ts, ts,
                 ),
             )
 
@@ -140,18 +159,28 @@ def upsert_active_listings(listings: list[ParsedListing]) -> None:
 def mark_missing_as_sold_proxy(seen_item_ids: set[str]) -> int:
     """Any previously-active listing absent from this run's results is
     treated as sold (or delisted) at its last known price. Returns the
-    number of sold-proxy events recorded."""
+    number of sold-proxy events recorded.
+
+    Listings with Best Offer enabled get a distinct, lower-confidence
+    source: the last *listed* price isn't necessarily what it actually
+    sold for, since an accepted offer could be lower. comps.py weights
+    these behind cleaner signals rather than treating them as equally
+    trustworthy.
+    """
     ts = now_iso()
     with connect() as conn:
         rows = conn.execute(
-            "SELECT item_id, signature, price FROM listings WHERE is_active = 1"
+            "SELECT item_id, signature, price, has_best_offer FROM listings WHERE is_active = 1"
         ).fetchall()
         missing = [r for r in rows if r["item_id"] not in seen_item_ids]
         for row in missing:
+            source = (
+                "delisting_proxy_best_offer" if row["has_best_offer"] else "delisting_proxy"
+            )
             conn.execute(
-                """INSERT INTO sold_proxy_events (item_id, signature, price, sold_at_approx)
-                   VALUES (?, ?, ?, ?)""",
-                (row["item_id"], row["signature"], row["price"], ts),
+                """INSERT INTO sold_proxy_events (item_id, signature, price, sold_at_approx, source)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (row["item_id"], row["signature"], row["price"], ts, source),
             )
             conn.execute(
                 "UPDATE listings SET is_active = 0 WHERE item_id = ?",
@@ -167,14 +196,16 @@ def active_listings() -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def comp_prices_for_signature(signature: str, since_iso: str) -> list[float]:
+def comp_events_for_signature(signature: str, since_iso: str) -> list[sqlite3.Row]:
+    """Returns every comp event (price + source) for a signature within
+    the lookback window. Tiering by source confidence is a scoring policy
+    decision, not a storage concern -- see comps.py."""
     with connect() as conn:
-        rows = conn.execute(
-            """SELECT price FROM sold_proxy_events
+        return conn.execute(
+            """SELECT price, source FROM sold_proxy_events
                WHERE signature = ? AND sold_at_approx >= ?""",
             (signature, since_iso),
         ).fetchall()
-        return [r["price"] for r in rows]
 
 
 def purge_ineligible_listings(

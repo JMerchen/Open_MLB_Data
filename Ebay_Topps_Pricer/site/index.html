@@ -60,7 +60,7 @@
             </td>
             <td data-label="Price">${fmtMoney(item.price)}</td>
             <td data-label="Comp Median">${fmtMoney(item.comp_median)}</td>
-            <td data-label="# Comps">${item.comp_count}</td>
+            <td data-label="# Comps">${item.comp_count} <span class="comp-source">(${escapeHtml(item.comp_source)})</span></td>
             <td data-label="Deviation" class="positive">${item.deviation_pct.toFixed(1)}%</td>
             <td data-label=""><a href="${item.web_url}" target="_blank" rel="noopener noreferrer">View on eBay</a></td>
           </tr>`;

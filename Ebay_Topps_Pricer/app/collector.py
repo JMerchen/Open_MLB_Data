@@ -43,6 +43,7 @@ def _to_parsed_listing(item: EbayItem, parsed: ParsedCard) -> db.ParsedListing:
         grade_company=parsed.grade_company,
         grade_value=parsed.grade_value,
         is_psa_vault=_is_psa_vault(item),
+        has_best_offer="BEST_OFFER" in item.buying_options,
     )
 
 
