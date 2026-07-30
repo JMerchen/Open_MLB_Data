@@ -18,6 +18,10 @@ Guardrails applied here (see app/config.py for the actual values):
   - listings priced below MIN_LISTING_PRICE are dropped entirely -- a $0.99
     listing against a $1.59 comp median is a big deviation_pct but not a
     real opportunity
+  - a listing must beat its comp median by at least MIN_DEVIATION_PCT
+    percent AND MIN_DEVIATION_DOLLARS dollars -- comps are built from a
+    handful of noisy delisting-proxy events, not real sold prices, so a
+    small gap is normal variance, not a bargain
   - PSA Vault listings (is_psa_vault) are ranked ahead of everything else,
     since they carry a stronger authentication/custody signal
 """
@@ -78,8 +82,12 @@ def most_underpriced(
         if comp_median <= 0:
             continue
 
-        deviation_pct = (comp_median - row["price"]) / comp_median * 100
-        if deviation_pct <= 0:
+        deviation_dollars = comp_median - row["price"]
+        deviation_pct = deviation_dollars / comp_median * 100
+        if (
+            deviation_pct < config.MIN_DEVIATION_PCT
+            or deviation_dollars < config.MIN_DEVIATION_DOLLARS
+        ):
             continue
 
         scored.append(
