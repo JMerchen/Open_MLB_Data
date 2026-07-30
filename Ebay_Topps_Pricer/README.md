@@ -21,6 +21,11 @@ There are two ways to run the UI:
   $10) are dropped even if the deviation from comps looks big -- a $0.99
   listing against a $1.59 comp median is "60% underpriced" on paper but not
   a real opportunity.
+- **Minimum meaningful discount**: a listing must beat its comp median by
+  at least `MIN_DEVIATION_PCT` (default 15%) **and** `MIN_DEVIATION_DOLLARS`
+  (default $5) -- both, not either. Comps come from a handful of noisy
+  delisting-proxy events, not real sold prices, so a small gap (e.g. $22.49
+  against a $23.99 median) is normal variance, not a bargain.
 - **PSA Vault preference**: listings sold directly by PSA's official eBay
   storefront (`ebay.com/str/psa`) are flagged `is_psa_vault` and ranked
   ahead of all other listings, since a vaulted card carries a stronger

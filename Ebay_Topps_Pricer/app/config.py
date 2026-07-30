@@ -52,6 +52,17 @@ COMP_LOOKBACK_DAYS = 90
 # median is "60% underpriced" on paper but not worth acting on.
 MIN_LISTING_PRICE = 10.0
 
+# A listing must beat its comp median by at least this percentage AND this
+# many raw dollars to count as a real bargain. Comps are built from only a
+# handful of noisy delisting-proxy events (not real sold prices -- see
+# README), so a small gap is normal price variance, not a deal: e.g. a
+# $22.49 listing against a $23.99 comp median is "6% underpriced" on paper
+# but not a real opportunity. Both thresholds must be met -- a big
+# percentage on a cheap card, or a big dollar amount that's a tiny
+# percentage on an expensive card, isn't enough on its own.
+MIN_DEVIATION_PCT = 15.0
+MIN_DEVIATION_DOLLARS = 5.0
+
 # eBay seller usernames that represent PSA's official "PSA Vault" storefront
 # (ebay.com/str/psa). Listings sold by PSA directly from the vault carry a
 # stronger authentication/custody signal than a random seller's raw or
