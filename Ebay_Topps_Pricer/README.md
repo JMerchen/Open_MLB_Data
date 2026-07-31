@@ -68,43 +68,42 @@ without bids isn't a sale). Fixed-price listings dominate the modern sports
 card market on eBay, so the collector only pulls `buyingOptions:{FIXED_PRICE}`
 listings to keep the sold-proxy signal reasonably clean.
 
-## The sold-listings scraper (real prices, with real tradeoffs)
+## The sold-listings scraper (built, but disabled -- see why)
 
-`app/ebay_scraper.py` supplements the delisting-proxy comps above with
-**real sold prices**, scraped from eBay's own public "sold/completed
-listings" search (the same filter available at ebay.com under "Sold
-Items") -- something the Browse API cannot provide at all (see above).
-Scraped prices are the highest-confidence comp tier (`ebay_scraped`,
-see "Comp source confidence tiers" above) and take priority over the
-delisting-proxy whenever there are enough of them.
+`app/ebay_scraper.py` was built to supplement the delisting-proxy comps
+above with **real sold prices**, scraped from eBay's own public
+"sold/completed listings" search -- something the Browse API cannot
+provide at all (see above). Scraped prices would have been the highest-
+confidence comp tier (`ebay_scraped`, see "Comp source confidence tiers"
+above), taking priority over the delisting-proxy whenever there were
+enough of them.
 
-**This is a deliberate, accepted tradeoff, not an oversight**: scraping
-eBay's website is against their Terms of Service, and unlike the Browse
-API their HTML markup can change at any time without notice, silently
-breaking `app/ebay_scraper.py`'s parsing. It was built this way because,
-for a tool whose bar is a real $30+ opportunity rather than a technically
-positive number, real sold prices matter enough to accept that risk, and
-because the $0 budget for this project rules out a paid third-party
-pricing API as the ToS-compliant alternative.
+**A live run confirmed it doesn't work from GitHub Actions**: every one
+of the 12 search queries got a flat `HTTP 403 Forbidden` on the very
+first request, before any HTML was even parsed --
+`{'queries_run': 12, 'queries_blocked': 12, 'total_scraped': 0}`. Since
+this happened on the *first* request rather than after repeated ones,
+it's a standing block on GitHub Actions' well-known IP ranges (a common
+target for anti-scraping infrastructure precisely because they're so
+often used for this), not something fixable by adjusting headers or
+request pacing. The `EbayBlockedError` safety net worked exactly as
+designed -- it detected the bad response and backed off cleanly rather
+than crashing or parsing garbage -- but the underlying goal (real sold
+prices) isn't reachable this way, at least not for free.
 
-It's a good citizen regardless: paced requests (`SCRAPE_DELAY_SECONDS`
-between pages, `QUERY_DELAY_SECONDS` between search queries), a capped
-page count per query, and if eBay serves an unrecognized page (a
-bot-check/interstitial instead of real results), `EbayBlockedError` is
-raised and that query is skipped rather than retried aggressively or
-parsed as if it were real data.
-
-Runs on its own schedule, separate from the hourly Browse API collector
-(`.github/workflows/ebay-sold-scraper.yml`, every 4 hours) -- see
-"Keeping data fresh" below for why, and for the one-time setup step.
-
-**Not yet validated against live eBay HTML.** The parsing logic
-(`_parse_results_page` in `app/ebay_scraper.py`) is tested against
-synthetic HTML matching eBay's expected `.s-item` search-result structure,
-but the actual page structure can only be confirmed by watching a real
-run's logs after this is deployed -- if eBay's markup has changed, expect
-to see `EbayBlockedError` warnings or a `0 sold items parsed` count in
-the workflow logs, and to need to update the CSS selectors accordingly.
+**The workflow's schedule is disabled as a result** (`workflow_dispatch`
+only in `.github/workflows/ebay-sold-scraper.yml`) rather than left
+running every 4 hours for no benefit. The code is kept in case it's ever
+worth adapting into a job that runs from a non-datacenter IP (e.g. a
+local cron job on a home machine) instead -- that was the identified
+alternative, but pursuing it was decided against for now in favor of
+keeping the existing Browse-API-only pipeline. It's a deliberate,
+documented dead end, not an oversight: this was attempted specifically
+because eBay's Marketplace Insights API (real sold data) requires
+business-only approval, and a paid third-party pricing API was ruled out
+by this project's $0 budget -- scraping was the last remaining option,
+and it doesn't clear the bar either, for a different reason (IP
+blocking, not cost).
 
 ## Project layout
 
@@ -178,37 +177,30 @@ Ebay_Topps_Pricer/
 The comps history only grows if the collector runs repeatedly over time. Two
 options:
 
-- **GitHub Actions (recommended for "set and forget")**: two workflows,
-  deliberately separate so a scraper failure/block can never take down the
-  core pipeline (see "The sold-listings scraper" above):
-  - `.github/workflows/ebay-topps-collector.yml` -- runs the Browse API
-    collector every hour, regenerates `site/data.json`, commits the
-    updated `data/pricer.sqlite3`, and deploys `site/` to GitHub Pages.
-  - `.github/workflows/ebay-sold-scraper.yml` -- runs the sold-listings
-    scraper every 4 hours (offset 20 minutes from the hourly collector to
-    avoid the two racing on their shared database commit) and commits the
-    updated database. It does not touch `site/data.json` or Pages --
-    newly scraped comps get picked up by the next hourly collector run.
-
-  To enable them:
+- **GitHub Actions (recommended for "set and forget")**:
+  `.github/workflows/ebay-topps-collector.yml` runs the Browse API
+  collector every hour, regenerates `site/data.json`, commits the updated
+  `data/pricer.sqlite3`, and deploys `site/` to GitHub Pages. To enable it:
   1. Add `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` as repository secrets
-     (Settings -> Secrets and variables -> Actions). Only the collector
-     workflow needs these -- the scraper doesn't use the eBay API at all.
+     (Settings -> Secrets and variables -> Actions).
   2. One-time: in Settings -> Pages -> "Build and deployment", set
      **Source** to **GitHub Actions** (not "Deploy from a branch"). This
      lets the workflow publish directly without needing a `gh-pages` branch.
-  3. Both workflows only fire on their schedules once they live on the
-     repo's default branch (GitHub doesn't run `schedule` triggers on
-     other branches), so they start working after this is merged.
+  3. The workflow only fires on a schedule once it lives on the repo's
+     default branch (GitHub doesn't run `schedule` triggers on other
+     branches), so it starts working after this is merged.
   4. Once deployed, the static site is live at
      `https://<your-github-username>.github.io/<repo-name>/`.
   5. `git pull` locally before running the FastAPI app to pick up the
-     latest collected data, since both workflows commit directly to the branch.
+     latest collected data, since the workflow commits directly to the branch.
 
-- **Local/manual**: run `python scripts/run_collector.py` and
-  `python scripts/run_scraper.py` yourself on a cron job (e.g. every few
-  hours) or by hand periodically. Run `python scripts/export_static.py`
-  afterward if you're using the static site.
+  `.github/workflows/ebay-sold-scraper.yml` also exists but its schedule
+  is disabled -- see "The sold-listings scraper" above for why.
+
+- **Local/manual**: run `python scripts/run_collector.py` yourself on a
+  cron job (e.g. every few hours) or by hand periodically. Run
+  `python scripts/export_static.py` afterward if you're using the static
+  site.
 
 ## Known limitations
 

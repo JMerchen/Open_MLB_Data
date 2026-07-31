@@ -10,14 +10,15 @@ name: eBay Topps Sold-Listings Scraper
 # NOT regenerate site/data.json or redeploy Pages. The next hourly
 # collector run (see ebay-topps-collector.yml) picks up any newly scraped
 # comps automatically within the hour.
+#
+# SCHEDULE DISABLED: a live run confirmed eBay returns a flat HTTP 403 on
+# the very first request, for every query, before any HTML is even parsed
+# -- a standing block on GitHub Actions' IP ranges, not a fixable
+# fingerprint/pacing issue. Kept as workflow_dispatch-only in case this is
+# ever run from a non-datacenter IP (e.g. adapted into a local cron job)
+# instead. See README's "The sold-listings scraper" section.
 
 on:
-  schedule:
-    # Every 4 hours, offset 20 minutes from the hourly collector's :00
-    # slot so the two workflows' git commits realistically never overlap
-    # (the collector run finishes in under two minutes -- see its own
-    # comments for the API budget this stays under).
-    - cron: "20 */4 * * *"
   workflow_dispatch: {}
 
 permissions:
