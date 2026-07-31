@@ -46,7 +46,7 @@
         </td>
         <td>${{ "%.2f"|format(item.price) }}</td>
         <td>${{ "%.2f"|format(item.comp_median) }}</td>
-        <td>{{ item.comp_count }}</td>
+        <td>{{ item.comp_count }} <span class="comp-source">({{ item.comp_source }})</span></td>
         <td class="positive">{{ "%.1f"|format(item.deviation_pct) }}%</td>
         <td><a href="{{ item.web_url }}" target="_blank" rel="noopener noreferrer">View on eBay</a></td>
       </tr>

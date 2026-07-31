@@ -24,6 +24,15 @@ Guardrails applied here (see app/config.py for the actual values):
     small gap is normal variance, not a bargain
   - PSA Vault listings (is_psa_vault) are ranked ahead of everything else,
     since they carry a stronger authentication/custody signal
+
+Comp events carry a `source` reflecting how much we trust the price (see
+COMP_SOURCE_RANK below): a real scraped sold price beats a clean
+delisting-proxy price beats a delisting-proxy price from a Best-Offer-
+enabled listing (its last listed price isn't necessarily what it actually
+sold for). We prefer the highest-confidence source available and only
+widen to lower-confidence sources if that's not enough to reach
+MIN_COMPS_FOR_SCORE -- never dilute a good sample with a worse one when
+the good sample alone is already sufficient.
 """
 
 from __future__ import annotations
@@ -33,6 +42,19 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from app import config, db
+
+# Lower rank = more trustworthy. Sources not listed here (shouldn't happen)
+# sort last.
+COMP_SOURCE_RANK = {
+    "ebay_scraped": 1,
+    "delisting_proxy": 2,
+    "delisting_proxy_best_offer": 3,
+}
+COMP_SOURCE_LABEL = {
+    "ebay_scraped": "verified sale",
+    "delisting_proxy": "proxy",
+    "delisting_proxy_best_offer": "proxy, best offer",
+}
 
 
 @dataclass
@@ -51,12 +73,31 @@ class ScoredListing:
     is_psa_vault: bool
     comp_median: float
     comp_count: int
+    comp_source: str  # weakest source tier actually used, for display
     deviation_pct: float  # positive = underpriced vs. comps
 
 
 def _lookback_cutoff_iso() -> str:
     cutoff = datetime.now(timezone.utc) - timedelta(days=config.COMP_LOOKBACK_DAYS)
     return cutoff.isoformat()
+
+
+def _select_comps(
+    events: list, min_comps: int
+) -> tuple[list[float], str] | None:
+    """Picks the highest-confidence subset of comp events that reaches
+    min_comps, widening to lower-confidence sources only as needed.
+    Returns (prices, weakest_source_used), or None if even every source
+    combined doesn't reach min_comps."""
+    by_rank = sorted(events, key=lambda e: COMP_SOURCE_RANK.get(e["source"], 99))
+    ranks_present = sorted({COMP_SOURCE_RANK.get(e["source"], 99) for e in by_rank})
+
+    for max_rank in ranks_present:
+        subset = [e for e in by_rank if COMP_SOURCE_RANK.get(e["source"], 99) <= max_rank]
+        if len(subset) >= min_comps:
+            worst_source = max(subset, key=lambda e: COMP_SOURCE_RANK.get(e["source"], 99))["source"]
+            return [e["price"] for e in subset], worst_source
+    return None
 
 
 def most_underpriced(
@@ -74,9 +115,11 @@ def most_underpriced(
         if row["price"] < config.MIN_LISTING_PRICE:
             continue
 
-        comp_prices = db.comp_prices_for_signature(row["signature"], since_iso)
-        if len(comp_prices) < min_comps:
+        events = db.comp_events_for_signature(row["signature"], since_iso)
+        selected = _select_comps(events, min_comps)
+        if selected is None:
             continue
+        comp_prices, comp_source = selected
 
         comp_median = statistics.median(comp_prices)
         if comp_median <= 0:
@@ -106,6 +149,7 @@ def most_underpriced(
                 is_psa_vault=bool(row["is_psa_vault"]),
                 comp_median=comp_median,
                 comp_count=len(comp_prices),
+                comp_source=COMP_SOURCE_LABEL.get(comp_source, comp_source),
                 deviation_pct=deviation_pct,
             )
         )
@@ -121,6 +165,7 @@ def to_dict(listing: ScoredListing) -> dict:
         "price": listing.price,
         "comp_median": listing.comp_median,
         "comp_count": listing.comp_count,
+        "comp_source": listing.comp_source,
         "deviation_pct": round(listing.deviation_pct, 1),
         "web_url": listing.web_url,
         "player": listing.player,

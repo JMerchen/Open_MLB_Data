@@ -90,6 +90,11 @@ tbody tr:hover {
 
 .positive { color: var(--positive); font-weight: 600; }
 
+.comp-source {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .psa-badge {
   display: inline-block;
   background: var(--psa-bg);

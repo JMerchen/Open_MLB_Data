@@ -23,7 +23,7 @@ There are two ways to run the UI:
   a real opportunity.
 - **Minimum meaningful discount**: a listing must beat its comp median by
   at least `MIN_DEVIATION_PCT` (default 15%) **and** `MIN_DEVIATION_DOLLARS`
-  (default $5) -- both, not either. Comps come from a handful of noisy
+  (default $30) -- both, not either. Comps come from a handful of noisy
   delisting-proxy events, not real sold prices, so a small gap (e.g. $22.49
   against a $23.99 median) is normal variance, not a bargain.
 - **PSA Vault preference**: listings sold directly by PSA's official eBay
@@ -32,6 +32,16 @@ There are two ways to run the UI:
   authentication/custody guarantee than a typical seller listing. This is
   a ranking preference, not a filter -- non-vaulted listings still show up,
   just after any PSA Vault ones.
+- **Comp source confidence tiers**: not every comp is equally trustworthy.
+  Highest to lowest: a real scraped sold price (`ebay_scraped`) > a clean
+  delisting-proxy price (`delisting_proxy`) > a delisting-proxy price from
+  a listing that had Best Offer enabled (`delisting_proxy_best_offer`),
+  since its last *listed* price isn't necessarily what it actually sold
+  for -- an accepted offer could be lower. `comps._select_comps()` always
+  prefers the highest-confidence tier available and only widens to a
+  lower tier if that's not enough to reach `MIN_COMPS_FOR_SCORE` -- never
+  dilutes a good sample with a worse one when the good sample already
+  suffices. Each result shows which tier its comps came from.
 
 All of these are configured in `app/config.py`.
 
@@ -58,22 +68,63 @@ without bids isn't a sale). Fixed-price listings dominate the modern sports
 card market on eBay, so the collector only pulls `buyingOptions:{FIXED_PRICE}`
 listings to keep the sold-proxy signal reasonably clean.
 
+## The sold-listings scraper (real prices, with real tradeoffs)
+
+`app/ebay_scraper.py` supplements the delisting-proxy comps above with
+**real sold prices**, scraped from eBay's own public "sold/completed
+listings" search (the same filter available at ebay.com under "Sold
+Items") -- something the Browse API cannot provide at all (see above).
+Scraped prices are the highest-confidence comp tier (`ebay_scraped`,
+see "Comp source confidence tiers" above) and take priority over the
+delisting-proxy whenever there are enough of them.
+
+**This is a deliberate, accepted tradeoff, not an oversight**: scraping
+eBay's website is against their Terms of Service, and unlike the Browse
+API their HTML markup can change at any time without notice, silently
+breaking `app/ebay_scraper.py`'s parsing. It was built this way because,
+for a tool whose bar is a real $30+ opportunity rather than a technically
+positive number, real sold prices matter enough to accept that risk, and
+because the $0 budget for this project rules out a paid third-party
+pricing API as the ToS-compliant alternative.
+
+It's a good citizen regardless: paced requests (`SCRAPE_DELAY_SECONDS`
+between pages, `QUERY_DELAY_SECONDS` between search queries), a capped
+page count per query, and if eBay serves an unrecognized page (a
+bot-check/interstitial instead of real results), `EbayBlockedError` is
+raised and that query is skipped rather than retried aggressively or
+parsed as if it were real data.
+
+Runs on its own schedule, separate from the hourly Browse API collector
+(`.github/workflows/ebay-sold-scraper.yml`, every 4 hours) -- see
+"Keeping data fresh" below for why, and for the one-time setup step.
+
+**Not yet validated against live eBay HTML.** The parsing logic
+(`_parse_results_page` in `app/ebay_scraper.py`) is tested against
+synthetic HTML matching eBay's expected `.s-item` search-result structure,
+but the actual page structure can only be confirmed by watching a real
+run's logs after this is deployed -- if eBay's markup has changed, expect
+to see `EbayBlockedError` warnings or a `0 sold items parsed` count in
+the workflow logs, and to need to update the CSS selectors accordingly.
+
 ## Project layout
 
 ```
 Ebay_Topps_Pricer/
   app/
     config.py         # env vars, search queries, comp/PSA-vault thresholds
-    ebay_client.py     # OAuth + Browse API wrapper
-    card_parser.py     # title -> player/year/set/parallel/grade + signature
-    db.py               # SQLite schema + queries (listings, sold_proxy_events)
-    collector.py        # one collection pass: snapshot + sold-proxy detection
-    comps.py             # comp median + mispricing scoring + PSA Vault ranking
-    web.py                 # FastAPI app (live server UI)
-    export_static.py        # dumps scored listings to site/data.json
+    ebay_client.py     # OAuth + Browse API wrapper (active listings)
+    ebay_scraper.py     # sold-listings HTML scraper (real sold prices)
+    card_parser.py       # title -> player/year/set/parallel/grade + signature
+    db.py                 # SQLite schema + queries (listings, sold_proxy_events)
+    collector.py            # Browse API collection pass: snapshot + sold-proxy detection
+    scrape_collector.py      # sold-listings scraper collection pass
+    comps.py                  # comp median + mispricing scoring + PSA Vault ranking
+    web.py                      # FastAPI app (live server UI)
+    export_static.py            # dumps scored listings to site/data.json
   templates/index.html, static/style.css   # FastAPI UI assets
   site/index.html, site/style.css, site/data.json   # static GitHub Pages UI
-  scripts/run_collector.py    # CLI entrypoint for the collector, run on a schedule
+  scripts/run_collector.py    # CLI entrypoint for the Browse API collector
+  scripts/run_scraper.py      # CLI entrypoint for the sold-listings scraper
   scripts/export_static.py    # CLI entrypoint to regenerate site/data.json
   data/pricer.sqlite3         # the comps database (created on first run)
 ```
@@ -127,27 +178,37 @@ Ebay_Topps_Pricer/
 The comps history only grows if the collector runs repeatedly over time. Two
 options:
 
-- **GitHub Actions (recommended for "set and forget")**: this repo includes
-  `.github/workflows/ebay-topps-collector.yml`, which runs the collector
-  every hour, regenerates `site/data.json`, commits the updated
-  `data/pricer.sqlite3` back to the repo, and deploys `site/` to GitHub
-  Pages. To enable it:
+- **GitHub Actions (recommended for "set and forget")**: two workflows,
+  deliberately separate so a scraper failure/block can never take down the
+  core pipeline (see "The sold-listings scraper" above):
+  - `.github/workflows/ebay-topps-collector.yml` -- runs the Browse API
+    collector every hour, regenerates `site/data.json`, commits the
+    updated `data/pricer.sqlite3`, and deploys `site/` to GitHub Pages.
+  - `.github/workflows/ebay-sold-scraper.yml` -- runs the sold-listings
+    scraper every 4 hours (offset 20 minutes from the hourly collector to
+    avoid the two racing on their shared database commit) and commits the
+    updated database. It does not touch `site/data.json` or Pages --
+    newly scraped comps get picked up by the next hourly collector run.
+
+  To enable them:
   1. Add `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` as repository secrets
-     (Settings -> Secrets and variables -> Actions).
+     (Settings -> Secrets and variables -> Actions). Only the collector
+     workflow needs these -- the scraper doesn't use the eBay API at all.
   2. One-time: in Settings -> Pages -> "Build and deployment", set
      **Source** to **GitHub Actions** (not "Deploy from a branch"). This
      lets the workflow publish directly without needing a `gh-pages` branch.
-  3. The workflow only fires on a schedule once it lives on the repo's
-     default branch (GitHub doesn't run `schedule` triggers on other
-     branches), so it starts working after this is merged.
+  3. Both workflows only fire on their schedules once they live on the
+     repo's default branch (GitHub doesn't run `schedule` triggers on
+     other branches), so they start working after this is merged.
   4. Once deployed, the static site is live at
      `https://<your-github-username>.github.io/<repo-name>/`.
   5. `git pull` locally before running the FastAPI app to pick up the
-     latest collected data, since the workflow commits directly to the branch.
+     latest collected data, since both workflows commit directly to the branch.
 
-- **Local/manual**: run `python scripts/run_collector.py` yourself on a
-  cron job (e.g. every few hours) or by hand periodically. Run
-  `python scripts/export_static.py` afterward if you're using the static site.
+- **Local/manual**: run `python scripts/run_collector.py` and
+  `python scripts/run_scraper.py` yourself on a cron job (e.g. every few
+  hours) or by hand periodically. Run `python scripts/export_static.py`
+  afterward if you're using the static site.
 
 ## Known limitations
 
@@ -158,6 +219,12 @@ options:
   fixed format. `card_parser.py` extracts what it reliably can (year,
   grading company/grade, card number, known set/parallel names, a best-guess
   player name) but will occasionally misgroup or under-match unusual titles.
+  Ungraded cards are bucketed as one "ungraded" group regardless of whether
+  the seller typed "RAW" in the title -- that distinction isn't meaningful.
+  Whenever the signature scheme changes, `db.recompute_signatures()` (run
+  automatically every collector run) re-derives every stored row's
+  signature from its title, so historical comps benefit from the fix too
+  instead of being stuck under the old scheme.
 - **Only single-card listings are scored**: sealed product (boxes, blasters,
   packs), set breaks, multi-card lots, and "pick your card" variation
   listings are excluded via `card_parser.is_single_card_listing()` -- a

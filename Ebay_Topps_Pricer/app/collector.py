@@ -43,6 +43,7 @@ def _to_parsed_listing(item: EbayItem, parsed: ParsedCard) -> db.ParsedListing:
         grade_company=parsed.grade_company,
         grade_value=parsed.grade_value,
         is_psa_vault=_is_psa_vault(item),
+        has_best_offer="BEST_OFFER" in item.buying_options,
     )
 
 
@@ -56,6 +57,14 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
             "Purged %d previously-stored listings/comps that aren't single "
             "specific cards (sealed product, lots, pick-your-card, etc.)",
             purged,
+        )
+
+    resignatured = db.recompute_signatures()
+    if resignatured:
+        logger.info(
+            "Recomputed %d stored signatures to match the current parser "
+            "(e.g. a card_parser.py grouping change)",
+            resignatured,
         )
 
     client = client or EbayClient()
@@ -95,6 +104,7 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
         "listings_skipped_non_single_card": total_skipped,
         "sold_proxy_events_recorded": sold_proxy_count,
         "purged_ineligible_rows": purged,
+        "resignatured_rows": resignatured,
     }
     logger.info("Collector run complete: %s", summary)
     return summary
