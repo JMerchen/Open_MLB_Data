@@ -244,6 +244,23 @@ def comp_events_for_signature(signature: str, since_iso: str) -> list[sqlite3.Ro
         ).fetchall()
 
 
+_DELETE_CHUNK_SIZE = 500
+
+
+def _delete_listings_and_events(conn: sqlite3.Connection, item_ids: list[str]) -> None:
+    """Deletes the given item_ids from both tables, chunked to stay well
+    under SQLite's host-parameter limit regardless of how many rows a
+    purge affects (a purge can plausibly hit thousands of rows at once --
+    see purge_below_min_price)."""
+    for i in range(0, len(item_ids), _DELETE_CHUNK_SIZE):
+        chunk = item_ids[i:i + _DELETE_CHUNK_SIZE]
+        placeholders = ",".join("?" * len(chunk))
+        conn.execute(f"DELETE FROM listings WHERE item_id IN ({placeholders})", chunk)
+        conn.execute(
+            f"DELETE FROM sold_proxy_events WHERE item_id IN ({placeholders})", chunk
+        )
+
+
 def purge_ineligible_listings(
     is_eligible_fn: Callable[[str, ParsedCard], bool],
 ) -> int:
@@ -262,14 +279,31 @@ def purge_ineligible_listings(
         ]
         if not bad_ids:
             return 0
-        placeholders = ",".join("?" * len(bad_ids))
-        conn.execute(
-            f"DELETE FROM listings WHERE item_id IN ({placeholders})", bad_ids
-        )
-        conn.execute(
-            f"DELETE FROM sold_proxy_events WHERE item_id IN ({placeholders})",
-            bad_ids,
-        )
+        _delete_listings_and_events(conn, bad_ids)
+        return len(bad_ids)
+
+
+def purge_below_min_price(min_price: float) -> int:
+    """Deletes any stored listing (and its sold-proxy events) priced below
+    min_price -- these can never pass MIN_LISTING_PRICE at scoring time
+    anyway, so there's no reason to keep tracking them.
+
+    This matters for more than tidiness: cheap, high-volume commons are
+    the most likely to fall in and out of our capped per-query sample as
+    eBay's ranking shifts, and each time one drops out we wrongly log a
+    sold-proxy event for it. Confirmed on the live production database:
+    one $0.99 item had been falsely marked "sold" 17 times over 12 days,
+    and 90% of all such false-repeat sold events came from listings under
+    this floor. Safe to call every run: a no-op once already clean.
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT item_id FROM listings WHERE price < ?", (min_price,)
+        ).fetchall()
+        bad_ids = [row["item_id"] for row in rows]
+        if not bad_ids:
+            return 0
+        _delete_listings_and_events(conn, bad_ids)
         return len(bad_ids)
 
 
