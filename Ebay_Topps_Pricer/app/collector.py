@@ -59,6 +59,16 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
             purged,
         )
 
+    purged_cheap = db.purge_below_min_price(config.MIN_LISTING_PRICE)
+    if purged_cheap:
+        logger.info(
+            "Purged %d previously-stored listings/comps priced under "
+            "MIN_LISTING_PRICE ($%.2f) -- can never be scored anyway, and "
+            "were generating false repeat 'sold' events by flapping in "
+            "and out of our capped per-query sample",
+            purged_cheap, config.MIN_LISTING_PRICE,
+        )
+
     resignatured = db.recompute_signatures()
     if resignatured:
         logger.info(
@@ -71,29 +81,44 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
 
     seen_item_ids: set[str] = set()
     total_upserted = 0
-    total_skipped = 0
+    total_skipped_non_single_card = 0
+    total_skipped_under_min_price = 0
 
     for query in config.SEARCH_QUERIES:
         logger.info("Searching eBay for %r", query)
         batch: list[db.ParsedListing] = []
-        skipped = 0
+        skipped_non_single_card = 0
+        skipped_under_min_price = 0
         for item in client.search_all(query, max_items=max_items_per_query):
             if "Topps" not in item.title:
                 # Browse API's text search is fuzzy; drop obvious non-Topps noise.
+                continue
+            if item.price < config.MIN_LISTING_PRICE:
+                # Can never pass MIN_LISTING_PRICE at scoring time anyway --
+                # skip at collection time so we don't track it (and don't
+                # generate false "sold" events for it, see
+                # db.purge_below_min_price).
+                skipped_under_min_price += 1
                 continue
             parsed = parse_title(item.title)
             if not is_single_card_listing(item.title, parsed):
                 # Sealed product, set breaks, "pick your card" listings, etc.
                 # -- not a single card at a single price, so not comparable.
-                skipped += 1
+                skipped_non_single_card += 1
                 continue
             seen_item_ids.add(item.item_id)
             batch.append(_to_parsed_listing(item, parsed))
         if batch:
             db.upsert_active_listings(batch)
             total_upserted += len(batch)
-        total_skipped += skipped
-        logger.info("  -> %d single-card Topps listings (%d skipped)", len(batch), skipped)
+        total_skipped_non_single_card += skipped_non_single_card
+        total_skipped_under_min_price += skipped_under_min_price
+        logger.info(
+            "  -> %d single-card Topps listings (%d non-single-card skipped, "
+            "%d under $%.2f skipped)",
+            len(batch), skipped_non_single_card, skipped_under_min_price,
+            config.MIN_LISTING_PRICE,
+        )
 
     sold_proxy_count = db.mark_missing_as_sold_proxy(seen_item_ids)
 
@@ -101,9 +126,11 @@ def run_once(client: EbayClient | None = None, max_items_per_query: int = 500) -
         "queries_run": len(config.SEARCH_QUERIES),
         "active_listings_seen": len(seen_item_ids),
         "listings_upserted": total_upserted,
-        "listings_skipped_non_single_card": total_skipped,
+        "listings_skipped_non_single_card": total_skipped_non_single_card,
+        "listings_skipped_under_min_price": total_skipped_under_min_price,
         "sold_proxy_events_recorded": sold_proxy_count,
         "purged_ineligible_rows": purged,
+        "purged_under_min_price_rows": purged_cheap,
         "resignatured_rows": resignatured,
     }
     logger.info("Collector run complete: %s", summary)
